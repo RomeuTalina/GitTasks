@@ -13,6 +13,7 @@ const CALLBACK = "callback"
 console.log(CLIENT_ID)
 console.log(CLIENT_SECRET)
 
+// É obrigatório usar isto em todos os acessos novos que criarmos (gets e posts), tens um exemplo no get to /test
 function auth(req, res, next) {
     const token = req.cookies.session;  // cookie onde gravaste o token
 
@@ -106,6 +107,7 @@ app.get('/callback', async (req, res) => {
     );
 });
 
+// passas a referência à função auth aqui no meio e isto faz a validação conforma a função la em cima
 app.get('/test', auth, (req, res) => {
 
     res.send(
