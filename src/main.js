@@ -13,6 +13,22 @@ const CALLBACK = "callback"
 console.log(CLIENT_ID)
 console.log(CLIENT_SECRET)
 
+function auth(req, res, next) {
+    const token = req.cookies.session;  // cookie onde gravaste o token
+
+    if (!token) {
+        return res.status(401).json({ error: "Token não encontrado" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded; // coloca dados do user na request
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: "Token inválido ou expirado" });
+    }
+}
+
 const app = express()
 app.use(cookieParser())
 
@@ -66,19 +82,41 @@ app.get('/callback', async (req, res) => {
         body: urlEncodedBody
     })
     .then(response => response.json())
-    .then(data => {
-        var jwt = jwt.decode(data.id_token);
-        res.send(
-            '<div> callback with code = <code>' + req.query.code + '</code></div><br>' +
-            '<div> client app received access code = <code>' + data.access_token + '</code></div><br>' +
-            '<div> id_token = <code>' + data.id_token + '</code></div><br>' +
-            '<div> Hi <b>' + jwt.email + '</b> </div><br>' +
-            'Go back to <a href="/">Home screen</a>'
-        );
-    })
-    console.log(response)
-})
 
+    const google_token = jwt.decode(response.id_token);
+    console.log(google_token);
+
+    const jwt_token = jwt.sign(
+        {
+            sub: google_token.sub,
+            email: google_token.email
+        },
+        process.env.JWT_SECRET,
+        {expiresIn: "1h"}
+    );
+
+    res.cookie("session", jwt_token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict"
+    });
+
+    res.send(
+        '<div>muito poggers mano</div>'
+    );
+});
+
+app.get('/test', auth, (req, res) => {
+
+    res.send(
+        '<div>Is this thing on lol</div>'
+    );
+});
+
+// app.get("/test", auth, (req, res) => {
+//     res.send("<div>Is this thing on lol</div>");
+// });
+//
 app.listen(PORT, (err) => {
     if (err) {
         return console.log('something bad happened', err)
