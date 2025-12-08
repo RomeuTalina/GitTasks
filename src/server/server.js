@@ -30,11 +30,14 @@ function auth(req, res, next) {
     }
 }
 
+const path = require("path");
+
 const app = express()
 app.use(cookieParser())
 
 app.get('/', (req, res) => {
-    res.send('<a href=/login>BOTAO</a>');
+    console.log(__dirname);
+    res.sendFile(path.join(__dirname, '../client/html/landing.html'));
 })
 
 app.get('/login', (req, res) => {
@@ -115,10 +118,15 @@ app.get('/test', auth, (req, res) => {
     );
 });
 
-// app.get("/test", auth, (req, res) => {
-//     res.send("<div>Is this thing on lol</div>");
-// });
-//
+app.get('/home', auth, (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/html/home.html'));
+});
+
+app.post('/list', auth, (req, res) => {
+
+    console.log(req.body.user);
+});
+
 app.listen(PORT, (err) => {
     if (err) {
         return console.log('something bad happened', err)
