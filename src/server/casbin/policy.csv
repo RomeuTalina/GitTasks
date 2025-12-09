@@ -1,0 +1,5 @@
+p, free, github:milestone, read
+p, regular, github:milestone, read
+p, regular, tasks:defaultList, create
+p, premium, github:milestone, read
+p, premium, tasks:anyList, create

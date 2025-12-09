@@ -32,7 +32,58 @@ function auth(req, res, next) {
     }
 }
 
+const { newEnforcer } = require("casbin");
 const path = require("path");
+
+
+let enforcer; // variável global para guardar o enforcer
+
+async function initCasbin() {
+    const modelPath = path.join(__dirname, "casbin", "model.conf");
+    const policyPath = path.join(__dirname, "casbin", "policy.csv");
+
+    // não precisas de FileAdapter, passas só os paths
+    enforcer = await newEnforcer(modelPath, policyPath);
+    console.log("Casbin pronto");
+}
+
+
+initCasbin().catch(err => {
+    console.error("Erro a iniciar Casbin:", err);
+});
+
+//verifica no casbin se o user com este sub pode fazer esta act neste obj
+function authorize(obj, act) {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    if (!req.enforcer) {
+      return res.status(500).json({ error: "Enforcer não disponível" });
+    }
+
+    console.log("Autorizando o usuário com o papel:", req.user.role);  // Log do role
+
+    try {
+      const allowed = await req.enforcer.enforce(
+        req.user.sub, // ID do user (vem do JWT)
+        obj,          // recurso, ex: "github:milestone"
+        act           // ação, ex: "read"
+      );
+
+      if (!allowed) {
+        return res.status(403).json({ error: "Acesso negado" });
+      }
+
+      next();
+    } catch (err) {
+      console.error("Erro no Casbin:", err);
+      return res.status(500).json({ error: "Erro interno de autorização" });
+    }
+  };
+}
+
+
 
 const app = express();
 app.use(cookieParser());
@@ -42,6 +93,12 @@ app.get('/', (req, res) => {
     console.log(__dirname);
     res.sendFile(path.join(__dirname, '../client/html/landing.html'));
 })
+
+// Casbin no req
+app.use((req, res, next) => {
+    req.enforcer = enforcer;
+    next();
+});
 
 app.get('/login', (req, res) => {
     res.redirect(302, 
@@ -93,18 +150,26 @@ app.get('/callback', async (req, res) => {
     const google_token = jwt.decode(response.id_token);
     console.log(google_token);
 
+    const role = "regular";
+    // ex: if (google_token.email === "prof@uni.pt") role = "premium";
+
+    if (enforcer) {
+        await enforcer.addGroupingPolicy(google_token.sub, role);
+    }
+
     const jwt_token = jwt.sign(
         {
             sub: google_token.sub,
-            email: google_token.email
+            email: google_token.email,
+            role: role
         },
         process.env.JWT_SECRET,
         {expiresIn: "1h"}
     );
 
     res.cookie("session", jwt_token, {
-        httpOnly: true,
-        secure: true,
+        httpOnly: false,
+        secure: false,
         sameSite: "strict"
     });
 
@@ -136,12 +201,138 @@ app.post('/list', (req, res) => {
 
     console.log("post to /list");
     console.log(req.body);
-    res.send("ok");
+    res.json({
+        status: "ok",
+        user: req.body.user,
+        repo: req.body.repo
+    });
 });
+
+
+// ver milestones – todos com papel que tenha p, <role>, github:milestone, read
+app.get(
+  '/github/milestones',
+  auth,
+  authorize("github:milestone", "read"),
+  async (req, res) => {
+    const { user, repo } = req.query;
+
+    if (!user || !repo) {
+      return res.status(400).json({ error: "Falta user ou repo" });
+    }
+
+    const url = `https://api.github.com/repos/${user}/${repo}/milestones`;
+
+    try {
+      const ghRes = await fetch(url, {
+        headers: {
+          'Accept': 'application/vnd.github+json'
+        }
+      });
+
+      const bodyText = await ghRes.text();
+      console.log("GitHub status:", ghRes.status);
+      console.log("GitHub body:", bodyText);
+
+      if (!ghRes.ok) {
+        return res
+          .status(ghRes.status)
+          .json({ error: "Erro a obter milestones do GitHub", detail: bodyText });
+      }
+
+      const milestones = JSON.parse(bodyText);
+      res.json(milestones);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erro interno a falar com o GitHub" });
+    }
+  }
+);
+
+
+// criar tarefa na lista default – regular/premium
+app.post(
+    '/tasks/default',
+    auth,
+    authorize("tasks:defaultList", "create"),
+    (req, res) => {
+        // aqui depois crias tarefa na lista "default" do Google Tasks
+        res.json({ message: "Tarefa criada com sucesso" });
+    }
+);
+
+// criar tarefa em qualquer lista – só premium
+app.post(
+    '/tasks/custom',
+    auth,
+    authorize("tasks:anyList", "create"),
+    (req, res) => {
+        // aqui crias tarefa numa lista escolhida pelo user
+        res.send("criou numa lista custom");
+    }
+);
 
 app.listen(PORT, (err) => {
     if (err) {
         return console.log('something bad happened', err)
     }
     console.log(`server is listening on ${PORT}`)
-})
+});
+
+const { google } = require("googleapis");
+
+app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async (req, res) => {
+  const { title, dueDate } = req.body;
+
+  if (!dueDate) {
+    return res.status(400).json({ error: "Falta a data de vencimento da tarefa" });
+  }
+
+  try {
+    console.log("Criando tarefa com os seguintes dados:", { title, dueDate });
+
+    // Log do access_token para garantir que está correto
+    console.log("Access token que estamos usando:", req.user.accessToken);
+
+    // Inicializa o Google Tasks API com o token de acesso
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({
+      access_token: req.user.accessToken,  // O token de acesso do Google
+    });
+
+    const tasks = google.tasks({ version: "v1", auth: oauth2Client });
+
+    const task = {
+      title: title,   // Título fixo
+      due: dueDate,   // A data de vencimento
+    };
+
+    // Aguarda a resposta da API do Google Tasks
+    const response = await tasks.tasks.insert({
+      tasklist: "@default",  // Ou o nome da lista que você quiser
+      resource: task,
+    });
+
+    // Aqui vamos garantir que a resposta está correta
+    console.log("Resposta da criação de tarefa do Google Tasks:", response.data);
+
+    // Retorna a resposta para o cliente
+    res.json({
+      message: "Tarefa criada com sucesso",
+      taskId: response.data.id, // Você pode devolver o ID da tarefa criada
+      taskTitle: response.data.title, // O título da tarefa
+      taskDueDate: response.data.due, // Data de vencimento da tarefa
+    });
+
+  } catch (err) {
+    console.error("Erro ao criar tarefa no Google Tasks:", err);
+    if (err.response) {
+      console.error("Erro detalhado do Google Tasks:", err.response.data);  // Mostra a resposta de erro da API
+    }
+    res.status(500).json({ error: "Erro ao criar tarefa no Google Tasks", detail: err.message });
+  }
+});
+
+
+
+
