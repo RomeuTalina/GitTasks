@@ -18,12 +18,14 @@ function auth(req, res, next) {
     const token = req.cookies.session;  // cookie onde gravaste o token
 
     if (!token) {
+        console.log("fuck you buddy");
         return res.status(401).json({ error: "Token não encontrado" });
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded; // coloca dados do user na request
+        console.log("auth successful");
         next();
     } catch (err) {
         return res.status(401).json({ error: "Token inválido ou expirado" });
@@ -32,8 +34,9 @@ function auth(req, res, next) {
 
 const path = require("path");
 
-const app = express()
-app.use(cookieParser())
+const app = express();
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, "..", "client")));
 
 app.get('/', (req, res) => {
     console.log(__dirname);
@@ -106,7 +109,9 @@ app.get('/callback', async (req, res) => {
     });
 
     res.send(
-        '<div>muito poggers mano</div>'
+        '<div>muito poggers mano</div>'+
+        '<br><br>'+
+        '<a href=/home>HOME</a>'
     );
 });
 
@@ -118,13 +123,20 @@ app.get('/test', auth, (req, res) => {
     );
 });
 
+
+
 app.get('/home', auth, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/html/home.html'));
 });
 
-app.post('/list', auth, (req, res) => {
+//Todos os endpoints que precisarem de ler json têm de ficar dps disto
+app.use(express.json());
 
-    console.log(req.body.user);
+app.post('/list', (req, res) => {
+
+    console.log("post to /list");
+    console.log(req.body);
+    res.send("ok");
 });
 
 app.listen(PORT, (err) => {

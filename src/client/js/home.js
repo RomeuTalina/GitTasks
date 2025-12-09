@@ -3,6 +3,8 @@ const listForm = document.getElementById("listForm");
 
 listForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    
+    console.log("submit");
 
     const username = document.getElementById('userField').value;
     const repo = document.getElementById('repoField').value;
@@ -12,13 +14,14 @@ listForm.addEventListener('submit', async (e) => {
         'repo': repo
     };
 
+    console.log(requestBody);
+
     response = await fetch('http://localhost:3001/list', {
         method: 'POST',
         headers: {
-            'ContentType': 'application/json' 
+            "Content-Type": "application/json"
         },
-        body: {
-            requestBody      
-        }
+        // Tens de transformar em string
+        body: JSON.stringify(requestBody)
     });
 });
