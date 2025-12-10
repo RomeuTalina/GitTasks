@@ -249,18 +249,6 @@ app.get(
   }
 );
 
-
-// criar tarefa na lista default – regular/premium
-app.post(
-    '/tasks/default',
-    auth,
-    authorize("tasks:defaultList", "create"),
-    (req, res) => {
-        // aqui depois crias tarefa na lista "default" do Google Tasks
-        res.json({ message: "Tarefa criada com sucesso" });
-    }
-);
-
 // criar tarefa em qualquer lista – só premium
 app.post(
     '/tasks/custom',
@@ -281,58 +269,14 @@ app.listen(PORT, (err) => {
 
 const { google } = require("googleapis");
 
-app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async (req, res) => {
-  const { title, dueDate } = req.body;
-
-  if (!dueDate) {
-    return res.status(400).json({ error: "Falta a data de vencimento da tarefa" });
-  }
-
-  try {
-    console.log("Criando tarefa com os seguintes dados:", { title, dueDate });
-
-    // Log do access_token para garantir que está correto
-    console.log("Access token que estamos usando:", req.user.accessToken);
-
-    // Inicializa o Google Tasks API com o token de acesso
-    const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials({
-      access_token: req.user.accessToken,  // O token de acesso do Google
-    });
-
-    const tasks = google.tasks({ version: "v1", auth: oauth2Client });
-
-    const task = {
-      title: title,   // Título fixo
-      due: dueDate,   // A data de vencimento
-    };
-
-    // Aguarda a resposta da API do Google Tasks
-    const response = await tasks.tasks.insert({
-      tasklist: "@default",  // Ou o nome da lista que você quiser
-      resource: task,
-    });
-
-    // Aqui vamos garantir que a resposta está correta
-    console.log("Resposta da criação de tarefa do Google Tasks:", response.data);
-
-    // Retorna a resposta para o cliente
-    res.json({
-      message: "Tarefa criada com sucesso",
-      taskId: response.data.id, // Você pode devolver o ID da tarefa criada
-      taskTitle: response.data.title, // O título da tarefa
-      taskDueDate: response.data.due, // Data de vencimento da tarefa
-    });
-
-  } catch (err) {
-    console.error("Erro ao criar tarefa no Google Tasks:", err);
-    if (err.response) {
-      console.error("Erro detalhado do Google Tasks:", err.response.data);  // Mostra a resposta de erro da API
+app.post('/tasks/default', auth, authorize("tasks:defaultList", "create"), (req, res) => {
+    const { title, dueDate } = req.body;
+    if (!dueDate) {
+        return res.status(400).json({ error: "Due date missing" });
     }
-    res.status(500).json({ error: "Erro ao criar tarefa no Google Tasks", detail: err.message });
-  }
-});
 
+    res.json({ message: "Task created successfully" });
+});
 
 
 
