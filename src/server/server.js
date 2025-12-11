@@ -110,7 +110,7 @@ app.get('/login', (req, res) => {
         + 'client_id='+ CLIENT_ID +'&'
         
         // OpenID scope "openid email"
-        + 'scope=openid%20email&'
+        + 'scope=openid%20email%20https://www.googleapis.com/auth/tasks&'
         
         // parameter state is used to check if the user-agent requesting login is the same making the request to the callback URL
         // more info at https://www.rfc-editor.org/rfc/rfc6749#section-10.12
@@ -123,7 +123,9 @@ app.get('/login', (req, res) => {
         // + 'redirect_uri=http://localhost:'+PORT+'/'+CALLBACK
         + 'redirect_uri=http://localhost:' + PORT + '/' + CALLBACK
     );
-})
+});
+
+const sessions = new Map();
 
 app.get('/callback', async (req, res) => {
 
@@ -147,10 +149,27 @@ app.get('/callback', async (req, res) => {
     })
     .then(response => response.json())
 
+    // temos de tirar dados (basicamente so o access token)
+    // da resposta da google, e esta informaçao ta toda no id_token (é um jwt entao damos decode)
     const google_token = jwt.decode(response.id_token);
-    console.log(google_token);
-
+    // Id da sessao cujos dados vamos guardar para depois.
+    // Guardamos estes dados no servidor mm
+    const sessionId = crypto.randomUUID();
+    // Idk isto nao parece certo acho que temos de mudar a forma como
+    // fazemos a atribuiçao do role
     const role = "regular";
+
+    sessions.set(sessionId, {
+        //ISTO É MEGA IMPORTANTE PARA CONSEGUIR COMUNICAR COM A API DO GOOGLE TASKS
+        access_token: response.access_token,
+        //----------------------------------
+        refresh_token: response.refresh_token,
+        sub: google_token.sub,
+        email: google_token.email,
+        role: role,
+        expiration: Date.now() + (response.expires_in * 1000)
+    });
+
     // ex: if (google_token.email === "prof@uni.pt") role = "premium";
 
     if (enforcer) {
@@ -159,6 +178,7 @@ app.get('/callback', async (req, res) => {
 
     const jwt_token = jwt.sign(
         {
+            sessionId: sessionId,
             sub: google_token.sub,
             email: google_token.email,
             role: role
@@ -192,6 +212,8 @@ app.get('/test', auth, (req, res) => {
 
 app.get('/home', auth, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/html/home.html'));
+
+    console.log(jwt.decode(req.cookies.session));
 });
 
 //Todos os endpoints que precisarem de ler json têm de ficar dps disto
@@ -249,6 +271,68 @@ app.get(
   }
 );
 
+const google = require("googleapis");
+
+app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async (req, res) => {
+
+    const { title, dueDate } = req.body;
+
+    if (!dueDate) {
+        return res.status(400).json({ error: "Falta a data de vencimento da tarefa" });
+    }
+
+    try {
+        console.log("Criando tarefa com os seguintes dados:", { title, dueDate });
+
+        // Log do access_token para garantir que está correto
+        console.log("Access token que estamos usando:", req.cookies.session);
+
+        const task = {
+            title: title,   // Título fixo
+            due: dueDate,   // A data de vencimento
+        };
+
+        //Obter o access token da google
+        sessionInfo = sessions.get(
+            jwt.decode(req.cookies.session)
+            .sessionId
+        );
+        const google_access_token = sessionInfo.access_token;
+
+        const response = await fetch("https://tasks.googleapis.com/tasks/v1/users/@me/lists/", {
+            method: "GET",
+            headers: {
+                //Temos de usar o access token da google que recebemos
+                //no callback
+                "Authorization": `Bearer ${google_access_token}`
+            } 
+        });
+
+        const text = await response.text();
+
+        console.log("RESPONSE: " + text);
+        res.send(text);
+
+
+
+        // // Retorna a resposta para o cliente
+        // res.json({
+        //     message: "Tarefa criada com sucesso",
+        //     taskId: response.data.id, // Você pode devolver o ID da tarefa criada
+        //     taskTitle: response.data.title, // O título da tarefa
+        //     taskDueDate: response.data.due, // Data de vencimento da tarefa
+        // });
+
+    } catch (err) {
+        console.error("Erro ao criar tarefa no Google Tasks:", err);
+        if (err.response) {
+            console.error("Erro detalhado do Google Tasks:", err.response.data);  // Mostra a resposta de erro da API
+            res.status(500).json({ error: "Erro ao criar tarefa no Google Tasks", detail: err.message });
+        }
+    }
+});
+
+
 // criar tarefa em qualquer lista – só premium
 app.post(
     '/tasks/custom',
@@ -266,17 +350,3 @@ app.listen(PORT, (err) => {
     }
     console.log(`server is listening on ${PORT}`)
 });
-
-const { google } = require("googleapis");
-
-app.post('/tasks/default', auth, authorize("tasks:defaultList", "create"), (req, res) => {
-    const { title, dueDate } = req.body;
-    if (!dueDate) {
-        return res.status(400).json({ error: "Due date missing" });
-    }
-
-    res.json({ message: "Task created successfully" });
-});
-
-
-

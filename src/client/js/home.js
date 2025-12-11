@@ -6,8 +6,8 @@ listForm.addEventListener("submit", async (e) => {
 
   console.log("submit");
 
-  const username = document.getElementById("userField").value.trim();
-  const repo = document.getElementById("repoField").value.trim();
+  const username = document.getElementById("userField").value;
+  const repo = document.getElementById("repoField").value;
 
   if (!username || !repo) {
     resultDiv.textContent = "Preenche o user e o repo.";
