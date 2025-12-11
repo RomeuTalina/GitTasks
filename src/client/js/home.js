@@ -75,7 +75,7 @@ async function createTask(milestone) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        title: "Tarefa relacionada à milestone do GitHub", // Texto fixo
+        title: milestone.title, // Texto fixo
         dueDate: milestone.due_on,  // A data de vencimento da milestone
       }),
     });
