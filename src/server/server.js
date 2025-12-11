@@ -64,11 +64,19 @@ function authorize(obj, act) {
 
     console.log("Autorizando o usuário com o papel:", req.user.role);  // Log do role
 
+    let permissionObj = obj; // Inicialmente assume o objeto padrão
+    let permissionAct = act; // Ação padrão
+
+    if (req.user.role === "premium") {
+      // Se o usuário for premium, autorize 'tasks:anyList' ao invés de 'tasks:defaultList'
+      permissionObj = "tasks:anyList"; // Permissão para qualquer lista
+    }
+
     try {
       const allowed = await req.enforcer.enforce(
         req.user.sub, // ID do user (vem do JWT)
-        obj,          // recurso, ex: "github:milestone"
-        act           // ação, ex: "read"
+        permissionObj,          // relocacurso, ex: "github:milestone"
+        permissionAct           // ação, ex: "read"
       );
 
       if (!allowed) {
@@ -157,7 +165,7 @@ app.get('/callback', async (req, res) => {
     const sessionId = crypto.randomUUID();
     // Idk isto nao parece certo acho que temos de mudar a forma como
     // fazemos a atribuiçao do role
-    const role = "regular";
+    const role = "premium";
 
     sessions.set(sessionId, {
         //ISTO É MEGA IMPORTANTE PARA CONSEGUIR COMUNICAR COM A API DO GOOGLE TASKS
@@ -347,14 +355,64 @@ app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async
 
 // criar tarefa em qualquer lista – só premium
 app.post(
-    '/tasks/custom',
-    auth,
-    authorize("tasks:anyList", "create"),
-    (req, res) => {
-        // aqui crias tarefa numa lista escolhida pelo user
-        res.send("criou numa lista custom");
+  '/tasks/custom',
+  auth,
+  authorize("tasks:anyList", "create"),
+  async (req, res) => {
+    const { title, dueDate, tasklistId } = req.body; // Obtendo tasklistId da requisição
+
+    if (!title || !dueDate || !tasklistId) {
+      return res.status(400).json({ error: "Falta título, data de vencimento ou ID da lista" });
     }
+
+    try {
+      console.log("Criando tarefa com os seguintes dados:", { title, dueDate, tasklistId });
+
+      // Obter o access token do Google do usuário
+      const sessionInfo = sessions.get(
+        jwt.decode(req.cookies.session).sessionId
+      );
+      const google_access_token = sessionInfo.access_token;
+
+      // Dados da tarefa a ser criada
+      const task = {
+        title: title,  // Título da tarefa
+        due: dueDate,  // Data de vencimento
+      };
+
+      // Requisição para criar a tarefa na lista especificada
+      const createTaskResponse = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${tasklistId}/tasks`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${google_access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(task),
+      });
+
+      const createdTask = await createTaskResponse.json();
+
+      if (createTaskResponse.ok) {
+        // Retornar a tarefa criada com sucesso
+        res.json({
+          message: "Tarefa criada com sucesso",
+          taskId: createdTask.id,  // ID da tarefa criada
+          taskTitle: createdTask.title,  // Título da tarefa
+          taskDueDate: createdTask.due,  // Data de vencimento da tarefa
+        });
+      } else {
+        res.status(createTaskResponse.status).json({
+          error: "Erro ao criar tarefa",
+          detail: createdTask,
+        });
+      }
+    } catch (err) {
+      console.error("Erro ao criar tarefa no Google Tasks:", err);
+      res.status(500).json({ error: "Erro interno ao criar tarefa", detail: err.message });
+    }
+  }
 );
+
 
 app.listen(PORT, (err) => {
     if (err) {
