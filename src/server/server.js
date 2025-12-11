@@ -67,10 +67,10 @@ function authorize(obj, act) {
     let permissionObj = obj; // Inicialmente assume o objeto padrão
     let permissionAct = act; // Ação padrão
 
-    if (req.user.role === "premium") {
+    //if (req.user.role === "premium") {
       // Se o usuário for premium, autorize 'tasks:anyList' ao invés de 'tasks:defaultList'
-      permissionObj = "tasks:anyList"; // Permissão para qualquer lista
-    }
+    //  permissionObj = "tasks:anyList"; // Permissão para qualquer lista
+    //}
 
     try {
       const allowed = await req.enforcer.enforce(
