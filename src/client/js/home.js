@@ -1,7 +1,7 @@
 const listForm = document.getElementById("listForm");
 const resultDiv = document.getElementById("result");
 
-const role = getUserRole();
+var role = "free";
 
 const botao = document.getElementById("listas");
 
@@ -50,13 +50,13 @@ listForm.addEventListener("submit", async (e) => {
 
     console.log("" + milestones);
     // Mostrar cada milestone com botão
-    milestones.forEach((m) => {
+    milestones.forEach(async (m) => {
         const div = document.createElement("div");
         div.textContent = `#${m.number} – ${m.title}`;
 
       // Verificar o papel do usuário antes de adicionar o botão
         console.log("Chamando a função getUserRole");
-        const userRole = getUserRole();
+        const userRole = await getUserRole();
         console.log("User Role:", userRole);
 
         if (userRole !== "free") {  // Apenas usuários que não são "free" podem criar tarefas
@@ -86,9 +86,12 @@ function createTask(milestone) {
     }
 }
 
+var listNameField;
+var submitButton;
+
 async function createTaskCustom(milestone) {
 
-    const listNameField = document.createElement("input");
+    listNameField = document.createElement("input");
     listNameField.placeholder = "Nome da Lista";
     document.body.appendChild(listNameField);
     let listTitle = "@default";
@@ -96,7 +99,7 @@ async function createTaskCustom(milestone) {
         listTitle = listNameField.value;
     })
 
-    const submitButton = document.createElement("button"); // Botao para criar a tarefa na lista escolhida
+    submitButton = document.createElement("button"); // Botao para criar a tarefa na lista escolhida
     submitButton.textContent = "Criar";
     submitButton.addEventListener("click", async () => {
 
@@ -130,6 +133,9 @@ async function createTaskCustom(milestone) {
         }catch (err){
             console.log("Sei la bro deu erro olha");
         }
+
+        listNameField.remove();
+        submitButton.remove();
     })
     document.body.appendChild(submitButton);
 }
@@ -168,36 +174,48 @@ async function createTaskDefault(milestone) {
     }
 }
 
-
-    // // Caso o utilizador tenha o plano premium
-    // else {
-    //     const listNameField = document.createElement("input");
-    //     listNameField.placeholder = "List Name";
-    //
-    // }
-
-
 // Função para obter o papel do usuário a partir do JWT no cookie
-function getUserRole() {
-    const token = document.cookie.split(';').find(row => row.startsWith('session='));
+async function getUserRole() {
 
-    if (!token) {
-        console.log("Token não encontrado.");
-        return null;
-    }
+    const response = await fetch("/role", {
+        method: "GET"
+    })
+    .then(response => response.json());
 
-    const jwtToken = token.split('=')[1];
+    console.log("getUserRole");
+    console.log(response);
+    role = response.role; 
 
-    try {
-        const decodedToken = JSON.parse(atob(jwtToken.split('.')[1]));  // Decodificar o JWT (sem verificação)
-        console.log("Decoded Token:", decodedToken);  // Log para ver a estrutura do token
-
-        return decodedToken.role; // Acessar o papel no payload do JWT
-    } catch (error) {
-        console.error("Erro ao decodificar JWT:", error);
-        return null;
-    }
+    return role;
 }
+
+async function setUserRole(newRole) {
+    
+    const response = await fetch("/role", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            role: newRole
+        })
+    })
+    .then(response => response.json());
+    
+    return response.role;
+}
+
+const roleDropdown = document.getElementById("roleDropdown");
+roleDropdown.addEventListener("change", async () => {
+    console.log("Role changed.");
+    role = await setUserRole(roleDropdown.value);
+})
+
+
+
+
+
+
 
 
 

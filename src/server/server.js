@@ -165,7 +165,7 @@ app.get('/callback', async (req, res) => {
     const sessionId = crypto.randomUUID();
     // Idk isto nao parece certo acho que temos de mudar a forma como
     // fazemos a atribuiçao do role
-    const role = "premium";
+    var role = "free";
 
     sessions.set(sessionId, {
         //ISTO É MEGA IMPORTANTE PARA CONSEGUIR COMUNICAR COM A API DO GOOGLE TASKS
@@ -178,18 +178,22 @@ app.get('/callback', async (req, res) => {
         expiration: Date.now() + (response.expires_in * 1000)
     });
 
-    // ex: if (google_token.email === "prof@uni.pt") role = "premium";
-
     if (enforcer) {
-        await enforcer.addGroupingPolicy(google_token.sub, role);
+        await enforcer.addGroupingPolicy(sessions.get(sessionId).sub, sessions.get(sessionId).role);
     }
+
+    // if (enforcer) {
+    //     await enforcer.addgroupingpolicy(sessions.get(sessionId).sub, role);
+    // }
+
+
+    // ex: if (google_token.email === "prof@uni.pt") role = "premium";
 
     const jwt_token = jwt.sign(
         {
             sessionId: sessionId,
             sub: google_token.sub,
             email: google_token.email,
-            role: role
         },
         process.env.JWT_SECRET,
         {expiresIn: "1h"}
@@ -202,8 +206,6 @@ app.get('/callback', async (req, res) => {
     });
 
     res.send(
-        '<div>muito poggers mano</div>'+
-        '<br><br>'+
         '<a href=/home>HOME</a>'
     );
 });
@@ -261,8 +263,8 @@ app.get(
       });
 
       const bodyText = await ghRes.text();
-      console.log("GitHub status:", ghRes.status);
-      console.log("GitHub body:", bodyText);
+      // console.log("GitHub status:", ghRes.status);
+      // console.log("GitHub body:", bodyText);
 
       if (!ghRes.ok) {
         return res
@@ -284,7 +286,7 @@ const google = require("googleapis");
 app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async (req, res) => {
     const { title, dueDate } = req.body;
 
-    if (!title || !dueDate) {
+    if (!title) {
         return res.status(400).json({ error: "Falta título." });
     }
 
@@ -452,6 +454,40 @@ app.get('/tasks/list', async (req, res) => {
     console.log(await response.json());
 })
 
+app.post("/role", async (req, res) => {
+    const token = jwt.decode(req.cookies.session);
+    console.log("TOKEN at /role");
+    console.log(JSON.stringify(token));
+    const sessionId = token.sessionId;
+
+    const session = sessions.get(sessionId);
+
+    console.log(req.body);
+    session.role = req.body.role;
+
+    if (enforcer) {
+        await enforcer.addGroupingPolicy(session.sub, session.role);
+    }
+
+    res.json({
+        role: session.role
+    })
+
+    return session.role;
+})
+
+app.get("/role", async(req, res) => {
+    const token = jwt.decode(req.cookies.session);
+    console.log("TOKEN at /role");
+    console.log(JSON.stringify(token));
+    const sessionId = token.sessionId;
+
+    const role = sessions.get(sessionId).role;
+    
+    res.json({
+        role: role
+    });
+})
 
 app.listen(PORT, (err) => {
     if (err) {
