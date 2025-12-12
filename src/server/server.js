@@ -18,7 +18,7 @@ function auth(req, res, next) {
     const token = req.cookies.session;  // cookie onde gravaste o token
 
     if (!token) {
-        console.log("fuck you buddy");
+        console.log("nao ha token");
         return res.status(401).json({ error: "Token não encontrado" });
     }
 
@@ -285,7 +285,7 @@ app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async
     const { title, dueDate } = req.body;
 
     if (!title || !dueDate) {
-        return res.status(400).json({ error: "Falta título ou data de vencimento da tarefa" });
+        return res.status(400).json({ error: "Falta título." });
     }
 
     try {
@@ -355,63 +355,102 @@ app.post("/tasks/default", auth, authorize("tasks:defaultList", "create"), async
 
 // criar tarefa em qualquer lista – só premium
 app.post(
-  '/tasks/custom',
-  auth,
-  authorize("tasks:anyList", "create"),
-  async (req, res) => {
-    const { title, dueDate, tasklistId } = req.body; // Obtendo tasklistId da requisição
+    '/tasks/custom',
+    auth,
+    authorize("tasks:anyList", "create"),
+    async (req, res) => {
 
-    if (!title || !dueDate || !tasklistId) {
-      return res.status(400).json({ error: "Falta título, data de vencimento ou ID da lista" });
+        const { title, dueDate, listTitle } = req.body; // Obtendo tasklistId da requisição
+        console.log(req.body);
+        console.log(title);
+        console.log(dueDate);
+        console.log(listTitle);
+
+        if (!title || !listTitle) {
+            return res.status(400).json({ error: "Falta título ou nome da lista" });
+        }
+
+        try {
+            console.log("Criando tarefa com os seguintes dados:", { title, dueDate, listTitle });
+
+            // Obter o access token do Google do usuário
+            const sessionInfo = sessions.get(
+                jwt.decode(req.cookies.session).sessionId
+            );
+            const google_access_token = sessionInfo.access_token;
+            console.log("GOOGLE ACCESS TOKEN");
+            console.log(google_access_token);
+
+            // Dados da tarefa a ser criada
+            const task = {
+                title: title,  // Título da tarefa
+                due: dueDate,  // Data de vencimento
+            };
+
+            // Sacar a lista
+            const listsResponse = await fetch(
+                'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
+                {
+                    headers: { 'Authorization': `Bearer ${google_access_token}` }
+                }
+            );
+            const lists = await listsResponse.json();
+
+            const myList = lists.items.find(list => list.title === listTitle);
+            console.log(myList);
+            const listId = myList.id;
+            console.log("LIST ID: " + listId)
+
+            // Requisição para criar a tarefa na lista especificada
+            const createTaskResponse = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks/`, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${google_access_token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(task),
+            });
+
+            const createdTask = await createTaskResponse.json();
+
+            if (createTaskResponse.ok) {
+                // Retornar a tarefa criada com sucesso
+                res.json({
+                    message: "Tarefa criada com sucesso",
+                    taskId: createdTask.id,  // ID da tarefa criada
+                    taskTitle: createdTask.title,  // Título da tarefa
+                    taskDueDate: createdTask.due,  // Data de vencimento da tarefa
+                });
+            } else {
+                res.status(createTaskResponse.status).json({
+                    error: "Erro ao criar tarefa",
+                    detail: createdTask,
+                });
+            }
+        } catch (err) {
+            console.error("Erro ao criar tarefa no Google Tasks:", err);
+            res.status(500).json({ error: "Erro interno ao criar tarefa", detail: err.message });
+        }
     }
-
-    try {
-      console.log("Criando tarefa com os seguintes dados:", { title, dueDate, tasklistId });
-
-      // Obter o access token do Google do usuário
-      const sessionInfo = sessions.get(
-        jwt.decode(req.cookies.session).sessionId
-      );
-      const google_access_token = sessionInfo.access_token;
-
-      // Dados da tarefa a ser criada
-      const task = {
-        title: title,  // Título da tarefa
-        due: dueDate,  // Data de vencimento
-      };
-
-      // Requisição para criar a tarefa na lista especificada
-      const createTaskResponse = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${tasklistId}/tasks`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${google_access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(task),
-      });
-
-      const createdTask = await createTaskResponse.json();
-
-      if (createTaskResponse.ok) {
-        // Retornar a tarefa criada com sucesso
-        res.json({
-          message: "Tarefa criada com sucesso",
-          taskId: createdTask.id,  // ID da tarefa criada
-          taskTitle: createdTask.title,  // Título da tarefa
-          taskDueDate: createdTask.due,  // Data de vencimento da tarefa
-        });
-      } else {
-        res.status(createTaskResponse.status).json({
-          error: "Erro ao criar tarefa",
-          detail: createdTask,
-        });
-      }
-    } catch (err) {
-      console.error("Erro ao criar tarefa no Google Tasks:", err);
-      res.status(500).json({ error: "Erro interno ao criar tarefa", detail: err.message });
-    }
-  }
 );
+
+app.get('/tasks/list', async (req, res) => {
+
+    const sessionInfo = sessions.get(
+        jwt.decode(req.cookies.session).sessionId
+    );
+    const google_access_token = sessionInfo.access_token;
+
+    const response = await fetch("https://tasks.googleapis.com/tasks/v1/users/@me/lists", {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${google_access_token}`
+        }
+    })
+
+    console.log("LISTAS:");
+    console.log(await response.json());
+})
 
 
 app.listen(PORT, (err) => {
